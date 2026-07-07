@@ -63,7 +63,7 @@ async def process_video(
 
     # Kick off async processing
     import asyncio
-    asyncio.create_task(_run_pipeline(task_id, task["browser"]))
+    asyncio.create_task(_run_pipeline(task_id, tasks[task_id]["browser"]))
 
     return RedirectResponse(url=f"/result/{task_id}", status_code=303)
 
