@@ -38,6 +38,7 @@ async def process_video(
     url: str = Form(""),
     file: UploadFile = File(None),
     output_modes: list[str] = Form([]),
+    browser: str = Form(""),
 ):
     task_id = uuid.uuid4().hex[:12]
 
@@ -56,17 +57,18 @@ async def process_video(
         "progress": 0,
         "source": source,
         "output_modes": output_modes,
+        "browser": browser,
         "result": None,
     }
 
     # Kick off async processing
     import asyncio
-    asyncio.create_task(_run_pipeline(task_id))
+    asyncio.create_task(_run_pipeline(task_id, task["browser"]))
 
     return RedirectResponse(url=f"/result/{task_id}", status_code=303)
 
 
-async def _run_pipeline(task_id: str):
+async def _run_pipeline(task_id: str, browser: str = ""):
     """Run the full processing pipeline in the background."""
     task = tasks[task_id]
 
@@ -80,7 +82,7 @@ async def _run_pipeline(task_id: str):
         parser = VideoParser(
             output_dir=str(settings.OUTPUT_DIR),
             uploads_dir=str(settings.UPLOADS_DIR),
-            browser=settings.BROWSER if settings.BROWSER else None,
+            browser=browser or settings.BROWSER or None,
         )
         video_info = parser.process(task["source"])
         task["progress"] = 30
