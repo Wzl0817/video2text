@@ -1,0 +1,191 @@
+{% extends "base.html" %}
+{% block title %}处理结果{% endblock %}
+{% block content %}
+
+<div class="max-w-4xl mx-auto">
+    <div class="flex items-center justify-between mb-6">
+        <h1 class="text-2xl font-bold">处理结果</h1>
+        <a href="/" class="text-sm text-blue-400 hover:text-blue-300">&larr; 新任务</a>
+    </div>
+
+    <div class="bg-slate-900/80 border border-slate-800 rounded-xl p-6 backdrop-blur">
+        <!-- Progress Indicator -->
+        <div id="progress-section" class="mb-6">
+            <div class="flex justify-between text-sm text-slate-400 mb-2">
+                <span id="status-text">{{ status }}</span>
+                <span id="progress-text">{{ progress }}%</span>
+            </div>
+            <div class="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
+                <div id="progress-bar"
+                     class="bg-gradient-to-r from-blue-500 via-cyan-500 to-emerald-500 h-2 rounded-full transition-all duration-700 ease-out"
+                     style="width: {{ progress }}%"></div>
+            </div>
+        </div>
+
+        <!-- Result Content -->
+        <div id="result-content">
+            {% if result and status == "completed" %}
+            <div class="space-y-6" id="completed-result">
+
+                <!-- Summary -->
+                <div class="bg-slate-800/50 rounded-lg p-4 border border-slate-700/50">
+                    <h3 class="text-sm font-semibold text-blue-400 mb-2 uppercase tracking-wider">概要</h3>
+                    <p class="text-slate-200 leading-relaxed">{{ result.summary.summary }}</p>
+                </div>
+
+                <!-- Key Points -->
+                {% if result.summary.key_points %}
+                <div>
+                    <h3 class="text-sm font-semibold text-blue-400 mb-3 uppercase tracking-wider">要点</h3>
+                    <ul class="space-y-2">
+                        {% for point in result.summary.key_points %}
+                        <li class="flex items-start gap-3 text-slate-200">
+                            <span class="w-1.5 h-1.5 rounded-full bg-blue-500 mt-2 shrink-0"></span>
+                            <span>{{ point }}</span>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                {% endif %}
+
+                <!-- Segments -->
+                {% if result.summary.segments %}
+                <div>
+                    <h3 class="text-sm font-semibold text-blue-400 mb-3 uppercase tracking-wider">分段摘要</h3>
+                    <div class="space-y-2">
+                        {% for seg in result.summary.segments %}
+                        <details class="bg-slate-800/30 rounded-lg p-3 border border-slate-700/30">
+                            <summary class="text-sm text-cyan-400 cursor-pointer font-medium">
+                                [{{ (seg.start // 60)|int }}:{{ '%02d' % (seg.start % 60)|int }} -
+                                 {{ (seg.end // 60)|int }}:{{ '%02d' % (seg.end % 60)|int }}]
+                            </summary>
+                            <p class="text-slate-400 text-sm mt-2 pl-2">{{ seg.summary }}</p>
+                        </details>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+
+                <!-- Key Quotes -->
+                {% if result.summary.key_quotes %}
+                <div>
+                    <h3 class="text-sm font-semibold text-blue-400 mb-3 uppercase tracking-wider">关键引文</h3>
+                    <div class="space-y-3">
+                        {% for q in result.summary.key_quotes %}
+                        <blockquote class="border-l-4 border-cyan-500 pl-4 text-slate-300 text-sm italic leading-relaxed">
+                            &ldquo;{{ q.text }}&rdquo;
+                            <footer class="text-xs text-slate-500 mt-1 not-italic">
+                                [{{ (q.start // 60)|int }}:{{ '%02d' % (q.start % 60)|int }}]
+                                {% if q.speaker %}&mdash; {{ q.speaker }}{% endif %}
+                            </footer>
+                        </blockquote>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+
+                <!-- Download Links -->
+                <div class="border-t border-slate-700 pt-5">
+                    <h3 class="text-sm font-semibold text-blue-400 mb-3 uppercase tracking-wider">下载输出</h3>
+                    <div class="flex flex-wrap gap-3">
+                        {% if result.files.markdown %}
+                        <a href="/download/{{ result.files.markdown.rsplit('/', 1)[1] }}"
+                           class="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition shadow">
+                            &#x2193; Markdown
+                        </a>
+                        {% endif %}
+                        {% if result.files.markdown_pdf %}
+                        <a href="/download/{{ result.files.markdown_pdf.rsplit('/', 1)[1] }}"
+                           class="inline-flex items-center gap-2 px-4 py-2 bg-cyan-600 text-white text-sm rounded-lg hover:bg-cyan-700 transition shadow">
+                            &#x2193; Markdown PDF
+                        </a>
+                        {% endif %}
+                        {% if result.files.mindmap %}
+                        <a href="/download/{{ result.files.mindmap.rsplit('/', 1)[1] }}"
+                           class="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white text-sm rounded-lg hover:bg-emerald-700 transition shadow">
+                            &#x2193; 思维导图 .mm
+                        </a>
+                        {% endif %}
+                        {% if result.files.mindmap_pdf %}
+                        <a href="/download/{{ result.files.mindmap_pdf.rsplit('/', 1)[1] }}"
+                           class="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white text-sm rounded-lg hover:bg-emerald-700 transition shadow">
+                            &#x2193; 思维导图 PDF
+                        </a>
+                        {% endif %}
+                        {% if result.files.notion_url %}
+                        <a href="{{ result.files.notion_url }}" target="_blank"
+                           class="inline-flex items-center gap-2 px-4 py-2 bg-purple-600 text-white text-sm rounded-lg hover:bg-purple-700 transition shadow">
+                            &#x2197; Notion
+                        </a>
+                        {% endif %}
+                        {% if result.files.video %}
+                        <a href="/download/{{ result.files.video.rsplit('/', 1)[1] }}"
+                           class="inline-flex items-center gap-2 px-4 py-2 bg-slate-600 text-white text-sm rounded-lg hover:bg-slate-700 transition shadow">
+                            &#x2193; 视频
+                        </a>
+                        {% endif %}
+                    </div>
+                    {% if result.files.notion_error %}
+                    <p class="text-red-400 text-xs mt-3">Notion 错误: {{ result.files.notion_error }}</p>
+                    {% endif %}
+                </div>
+            </div>
+
+            {% elif status == "error" %}
+            <div class="text-center py-8">
+                <div class="text-red-400 text-5xl mb-4">&#x2716;</div>
+                <p class="text-red-300">处理出错</p>
+                {% if result and result.error %}
+                <p class="text-slate-400 text-sm mt-2">{{ result.error }}</p>
+                {% endif %}
+                <a href="/" class="inline-block mt-4 text-blue-400 hover:text-blue-300">&larr; 重试</a>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<script>
+(function() {
+    const taskId = '{{ task_id }}';
+    const status = '{{ status }}';
+
+    if (status === 'completed' || status === 'error') return;
+
+    function poll() {
+        setTimeout(async () => {
+            try {
+                const resp = await fetch('/api/task/' + taskId);
+                const data = await resp.json();
+
+                const bar = document.getElementById('progress-bar');
+                const sText = document.getElementById('status-text');
+                const pText = document.getElementById('progress-text');
+
+                if (bar) bar.style.width = data.progress + '%';
+                if (sText) sText.textContent = data.status;
+                if (pText) pText.textContent = data.progress + '%';
+
+                if (data.status === 'error') {
+                    document.getElementById('result-content').innerHTML =
+                        '<div class="text-center py-8"><div class="text-red-400 text-5xl mb-4">&#x2716;</div>' +
+                        '<p class="text-red-300">处理出错</p>' +
+                        (data.result && data.result.error ? '<p class="text-slate-400 text-sm mt-2">' + data.result.error + '</p>' : '') +
+                        '<a href="/" class="inline-block mt-4 text-blue-400 hover:text-blue-300">&larr; 重试</a></div>';
+                } else if (data.status === 'completed') {
+                    window.location.reload();
+                } else {
+                    poll();
+                }
+            } catch (e) {
+                console.error('Poll failed', e);
+                setTimeout(poll, 3000);
+            }
+        }, 1500);
+    }
+
+    poll();
+})();
+</script>
+
+{% endblock %}

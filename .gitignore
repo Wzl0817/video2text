@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.env
+output/*
+uploads/*
+!output/.gitkeep
+!uploads/.gitkeep
+.DS_Store
+venv/
+.venv/
+*.whl
+dist/
+build/
