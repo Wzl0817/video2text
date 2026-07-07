@@ -1,12 +1,45 @@
 """
-Parser module.
+Parser module — download videos and extract audio.
+Supports: YouTube, Bilibili, Douyin, local files.
 """
 
 import os
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Optional
+
 import yt_dlp
+
+
+def _find_ffmpeg() -> str:
+    """Find ffmpeg binary, checking common locations beyond PATH."""
+    name = shutil.which("ffmpeg")
+    if name:
+        return name
+    candidates = [
+        "/opt/homebrew/bin/ffmpeg",
+        "/usr/local/bin/ffmpeg",
+        "/usr/bin/ffmpeg",
+        "/opt/local/bin/ffmpeg",
+    ]
+    for c in candidates:
+        if os.path.isfile(c):
+            return c
+    # If still not found, let the error surface naturally
+    return "ffmpeg"
+
+
+FFMPEG_PATH = _find_ffmpeg()
+FFMPEG_DIR = str(Path(FFMPEG_PATH).parent) if FFMPEG_PATH != "ffmpeg" else ""
+
+
+def _patch_env() -> dict:
+    """Return an env dict with ffmpeg directory added to PATH."""
+    env = os.environ.copy()
+    if FFMPEG_DIR and FFMPEG_DIR not in env.get("PATH", ""):
+        env["PATH"] = f"{FFMPEG_DIR}:{env.get('PATH', '')}"
+    return env
 
 
 class VideoParser:
@@ -20,6 +53,7 @@ class VideoParser:
         self.browser = browser
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.uploads_dir.mkdir(parents=True, exist_ok=True)
+        self._env = _patch_env()
 
     def detect_source_type(self, source):
         if os.path.isfile(source):
@@ -64,26 +98,36 @@ class VideoParser:
             ext = info.get("ext", "mp4")
             base = Path(ydl.prepare_filename(info)).stem
             vp = str(self.output_dir / f"{base}.{ext}")
-            return {"path": vp, "title": info.get("title", "untitled"),
-                    "duration": info.get("duration", 0),
-                    "source_url": url, "source_type": st}
+            return {
+                "path": vp,
+                "title": info.get("title", "untitled"),
+                "duration": info.get("duration", 0),
+                "source_url": url,
+                "source_type": st,
+            }
 
     def extract_audio(self, video_path, audio_format="wav"):
         video = Path(video_path)
         audio = self.output_dir / f"{video.stem}.{audio_format}"
-        subprocess.run(["ffmpeg", "-i", str(video), "-vn",
-            "-acodec", "pcm_s16le" if audio_format == "wav" else "libmp3lame",
-            "-ar", "16000", "-ac", "1", "-y", str(audio)], capture_output=True, check=True)
+        subprocess.run(
+            [FFMPEG_PATH, "-i", str(video), "-vn",
+             "-acodec", "pcm_s16le" if audio_format == "wav" else "libmp3lame",
+             "-ar", "16000", "-ac", "1", "-y", str(audio)],
+            capture_output=True, check=True,
+            env=self._env,
+        )
         return str(audio)
 
     def process_local_file(self, file_path):
-        import shutil
+        import shutil as sh
         src = Path(file_path)
         dest = self.uploads_dir / src.name
         if src.resolve() != dest.resolve():
-            shutil.copy2(str(src), str(dest))
-        return {"path": str(dest), "title": src.stem, "duration": 0,
-                "source_url": "", "source_type": "local"}
+            sh.copy2(str(src), str(dest))
+        return {
+            "path": str(dest), "title": src.stem, "duration": 0,
+            "source_url": "", "source_type": "local",
+        }
 
     def process(self, source):
         st = self.detect_source_type(source)
