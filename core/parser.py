@@ -1,14 +1,11 @@
 """
-Parser module — download videos from URLs and extract audio.
-Supports: YouTube, Bilibili, Douyin, local files.
+Parser module.
 """
 
 import os
 import subprocess
-import tempfile
 from pathlib import Path
 from typing import Optional
-
 import yt_dlp
 
 
@@ -17,110 +14,79 @@ class VideoParser:
 
     SUPPORTED_PLATFORMS = {"youtube", "bilibili", "douyin"}
 
-    def __init__(self, output_dir: str = "output", uploads_dir: str = "uploads"):
+    def __init__(self, output_dir="output", uploads_dir="uploads", browser=None):
         self.output_dir = Path(output_dir)
         self.uploads_dir = Path(uploads_dir)
+        self.browser = browser
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.uploads_dir.mkdir(parents=True, exist_ok=True)
 
-    def detect_source_type(self, source: str) -> str:
-        """Detect whether source is a URL or local file."""
+    def detect_source_type(self, source):
         if os.path.isfile(source):
             return "local"
-        source_lower = source.lower()
-        if "youtube.com" in source_lower or "youtu.be" in source_lower:
+        s = source.lower()
+        if "youtube.com" in s or "youtu.be" in s:
             return "youtube"
-        if "bilibili.com" in source_lower or "b23.tv" in source_lower:
+        if "bilibili.com" in s or "b23.tv" in s:
             return "bilibili"
-        if "douyin.com" in source_lower:
+        if "douyin.com" in s:
             return "douyin"
         return "unknown"
 
-    def download_video(self, url: str, output_template: str = "%(title)s.%(ext)s") -> dict:
-        """
-        Download video from a URL using yt-dlp.
-        Returns dict with path, title, and metadata.
-        """
-        output_path = self.output_dir / output_template
-
-        ydl_opts = {
+    def _build_ydl_opts(self, output_template, source_type):
+        opts = {
             "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
-            "outtmpl": str(output_path),
+            "outtmpl": str(self.output_dir / output_template),
             "quiet": True,
             "no_warnings": True,
             "extract_flat": False,
+            "extractor_retries": 3,
+            "retries": 5,
+            "fragment_retries": 5,
+            "ignore_no_formats_error": True,
         }
+        if self.browser:
+            opts["cookiesfrombrowser"] = (self.browser,)
+        if source_type == "bilibili":
+            opts["extractor_args"] = {"bilibili": {"prefer_hd": ["True"]}}
+        elif source_type == "douyin":
+            opts["extractor_args"] = {"douyin": {"use_api": ["web" if self.browser else "mobile"]}}
+            opts["format"] = "best"
+        elif source_type == "youtube":
+            opts["extractor_args"] = {"youtube": {"skip": ["webpage"]}}
+        return opts
 
+    def download_video(self, url, output_template="%(title)s.%(ext)s"):
+        st = self.detect_source_type(url)
+        ydl_opts = self._build_ydl_opts(output_template, st)
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
-            video_path = ydl.prepare_filename(info)
-            # Ensure correct extension
             ext = info.get("ext", "mp4")
-            video_path = str(output_path).replace("%(title)s.%(ext)s", f"{info['title']}.{ext}")
+            base = Path(ydl.prepare_filename(info)).stem
+            vp = str(self.output_dir / f"{base}.{ext}")
+            return {"path": vp, "title": info.get("title", "untitled"),
+                    "duration": info.get("duration", 0),
+                    "source_url": url, "source_type": st}
 
-        return {
-            "path": video_path,
-            "title": info.get("title", "untitled"),
-            "duration": info.get("duration", 0),
-            "source_url": url,
-        }
-
-    def extract_audio(self, video_path: str, audio_format: str = "wav") -> str:
-        """
-        Extract audio from a video file using ffmpeg.
-        Returns path to the extracted audio file.
-        """
+    def extract_audio(self, video_path, audio_format="wav"):
         video = Path(video_path)
-        audio_path = self.output_dir / f"{video.stem}.{audio_format}"
-
-        cmd = [
-            "ffmpeg", "-i", str(video),
-            "-vn",                          # No video
+        audio = self.output_dir / f"{video.stem}.{audio_format}"
+        subprocess.run(["ffmpeg", "-i", str(video), "-vn",
             "-acodec", "pcm_s16le" if audio_format == "wav" else "libmp3lame",
-            "-ar", "16000",                 # 16kHz for Whisper
-            "-ac", "1",                     # Mono
-            "-y",                           # Overwrite
-            str(audio_path),
-        ]
+            "-ar", "16000", "-ac", "1", "-y", str(audio)], capture_output=True, check=True)
+        return str(audio)
 
-        subprocess.run(cmd, capture_output=True, check=True)
-        return str(audio_path)
-
-    def process_local_file(self, file_path: str) -> dict:
-        """
-        Handle a local video file upload.
-        Copies it to a working directory and returns info.
-        """
+    def process_local_file(self, file_path):
+        import shutil
         src = Path(file_path)
         dest = self.uploads_dir / src.name
         if src.resolve() != dest.resolve():
-            import shutil
             shutil.copy2(str(src), str(dest))
-        return {
-            "path": str(dest),
-            "title": src.stem,
-            "duration": 0,  # Will be detected later
-            "source_url": "",
-        }
+        return {"path": str(dest), "title": src.stem, "duration": 0,
+                "source_url": "", "source_type": "local"}
 
-    def process(self, source: str) -> dict:
-        """
-        Unified entry point.
-        - source: URL string or local file path
-        Returns dict with video info and audio_path.
-        """
-        source_type = self.detect_source_type(source)
-
-        if source_type == "local":
-            video_info = self.process_local_file(source)
-        elif source_type in self.SUPPORTED_PLATFORMS | {"unknown"}:
-            video_info = self.download_video(source)
-        else:
-            raise ValueError(f"Unsupported source: {source}")
-
-        # Extract audio
-        audio_path = self.extract_audio(video_info["path"])
-        video_info["audio_path"] = audio_path
-        video_info["source_type"] = source_type
-
-        return video_info
+    def process(self, source):
+        st = self.detect_source_type(source)
+        vi = self.process_local_file(source) if st == "local" else self.download_video(source)
+        vi["audio_path"] = self.extract_audio(vi["path"])
+        return vi

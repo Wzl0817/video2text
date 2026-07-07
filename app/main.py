@@ -80,6 +80,7 @@ async def _run_pipeline(task_id: str):
         parser = VideoParser(
             output_dir=str(settings.OUTPUT_DIR),
             uploads_dir=str(settings.UPLOADS_DIR),
+            browser=settings.BROWSER if settings.BROWSER else None,
         )
         video_info = parser.process(task["source"])
         task["progress"] = 30
